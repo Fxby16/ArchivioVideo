@@ -6,3 +6,6 @@ Makefile
 log.txt
 telegram_credentials.txt
 Server/Source/app_data.hpp
+.vs
+*.sln
+*.vcxproj*
