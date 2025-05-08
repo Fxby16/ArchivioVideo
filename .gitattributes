@@ -1,0 +1,1 @@
+Server/Dependencies/tdlib/lib/Release/tdcore.lib filter=lfs diff=lfs merge=lfs -text

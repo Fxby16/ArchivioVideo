@@ -1,6 +1,10 @@
 #include "db.hpp"
 
-#include <mysql/mysql.h>
+#ifdef __linux__
+    #include <mysql/mysql.h>
+#else
+    #include <mysql.h>
+#endif
 #include <mutex>
 #include <iostream>
 

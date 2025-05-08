@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ProjectOutputs>
+    <ProjectOutput>
+      <FullPath>C:\Fabio\td\build\x64\Release\ZERO_CHECK</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Fabio\td\build\td\generate\Release\generate_mtproto.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Fabio\td\build\td\generate\tl-parser\Release\tl-parser.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Fabio\td\build\td\generate\x64\Release\tl_generate_tlo</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Fabio\td\build\td\generate\x64\Release\tl_generate_mtproto</FullPath>
+    </ProjectOutput>
+  </ProjectOutputs>
+  <ContentFiles />
+  <SatelliteDlls />
+  <NonRecipeFileRefs />
+</Project>

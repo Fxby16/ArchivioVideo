@@ -1,0 +1,2 @@
+C:/msys64/mingw64/bin/ar.exe qc libtl_writer_cpp.a CMakeFiles/tl_writer_cpp.dir/tl_writer_cpp.cpp.obj CMakeFiles/tl_writer_cpp.dir/tl_writer_h.cpp.obj CMakeFiles/tl_writer_cpp.dir/tl_writer_hpp.cpp.obj CMakeFiles/tl_writer_cpp.dir/tl_writer_jni_cpp.cpp.obj CMakeFiles/tl_writer_cpp.dir/tl_writer_jni_h.cpp.obj CMakeFiles/tl_writer_cpp.dir/tl_writer_td.cpp.obj
+C:/msys64/mingw64/bin/ranlib.exe libtl_writer_cpp.a
