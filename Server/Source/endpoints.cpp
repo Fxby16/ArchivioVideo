@@ -11,6 +11,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <fstream>
 
 void setup_endpoints()
 {
@@ -29,6 +30,7 @@ void setup_endpoints()
     mg_set_request_handler(ctx, "/auth/get_state", handle_get_state, nullptr);
     mg_set_request_handler(ctx, "/logout", handle_logout, nullptr);
     mg_set_request_handler(ctx, "/get_chats", handle_chats, nullptr);
+    mg_set_request_handler(ctx, "/upload", handle_upload, nullptr);
 
     //db
     mg_set_request_handler(ctx, "/set_video_data", set_video_data_handler, nullptr);
@@ -267,7 +269,7 @@ int handle_auth(struct mg_connection* conn, void* data)
                 uint32_t session_id = 0;
 
                 if(request_json.contains("session_id") && request_json["session_id"] != 0){ // Client already logged in
-                    session_id = request_json["session_id"];
+                    session_id = std::stoul(request_json["session_id"].get<std::string>());
                 }else{ // New client, generate session id
                     session_id = rand_uint32();
                 }
@@ -301,7 +303,7 @@ int handle_auth(struct mg_connection* conn, void* data)
                 return 400;
             }
 
-            uint32_t session_id = request_json["session_id"];
+            uint32_t session_id = std::stoul(request_json["session_id"].get<std::string>());
             std::shared_ptr<ClientSession> session = getSession(session_id);
             
             if(request_json.contains("phone_number")){
@@ -626,4 +628,133 @@ int get_videos_data_handler(struct mg_connection* conn, void* data)
         mg_printf(conn, "\r\n");
         return 405;
     }
+}
+
+int handle_upload(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+    const char *range = mg_get_header(conn, "Content-Range");
+    const char *session_id_h = mg_get_header(conn, "session_id");
+    const char *chat_id_h = mg_get_header(conn, "chat_id");
+    const char *file_name_h = mg_get_header(conn, "file_name");
+    
+    std::cout << "Received connection" << std::endl;
+
+    if(strcmp("POST", req_info->request_method) != 0){
+        std::cerr << "[ERROR] Unsupported request method: " << (req_info->request_method ? req_info->request_method : "null") << std::endl;
+        mg_printf(conn, "HTTP/1.1 405 Method Not Allowed\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 405;
+    }
+
+    std::cout << range << std::endl;
+
+    if(range){
+        int start, end, size;
+        if (sscanf(range, "bytes %d-%d/%d", &start, &end, &size) != 3){
+            std::cerr << "[ERROR] Invalid Range header format" << std::endl;
+            mg_printf(conn, "HTTP/1.1 416 Range Not Satisfiable\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 416;
+        }
+        
+        std::cout << start << " " << end << " " << size << std::endl;
+
+        std::string file_path = "tmp/" + std::string(file_name_h);
+        
+        std::cout << file_path << std::endl;
+
+        if(!std::filesystem::exists("tmp")){
+            std::filesystem::create_directory("tmp");
+        }
+
+        std::ofstream file;
+
+        if(start == 0){
+            file.open(file_path, std::ios::binary);
+        }else{
+            file.open(file_path, std::ios::binary | std::ios::app);
+        }
+
+        if(!file){
+            std::cerr << "[ERROR] Failed to open file: " << file_path << std::endl;
+            mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 500;
+        }
+
+        char* buffer = new char[end - start + 1];
+        int bytes_read = mg_read(conn, buffer, end - start + 1);
+
+        if(bytes_read > 0){
+            file.write(buffer, bytes_read);
+            file.close();
+        }
+
+        delete[] buffer;
+
+        if(end == size - 1){
+            int64_t chat_id;
+            sscanf(chat_id_h, "%lld", &chat_id);
+            int64_t session_id;
+            sscanf(session_id_h, "%lld", &session_id);
+
+            std::shared_ptr<ClientSession> session = getSession(session_id);
+
+            session->send({
+                {"@type", "sendMessage"},
+                {"chat_id", chat_id},
+                {"input_message_content", {
+                  {"@type", "inputMessageVideo"},
+                  {"video", {
+                    {"@type", "inputFileLocal"},
+                    {"path", file_path}
+                  }}
+                }}
+              });
+            
+            std::cout << "[MESSAGE] Sending to chat " << chat_id << std::endl;
+
+            uint32_t last_checked = 0;
+            bool uploaded = false;
+            while(!uploaded){
+                auto responses = session->getResponses()->get_all(last_checked);
+
+                for(auto r = responses.rbegin(); r != responses.rend(); r++){
+                    last_checked = r->first;
+
+                    json response = r->second;
+
+                    if(!response.is_null() && response["@type"] == "updateFile"){
+                        std::string res_file_path = response["file"]["local"]["path"];
+                        bool upload_complete = response["file"]["local"]["is_downloading_completed"];
+
+                        if(upload_complete && res_file_path == std::filesystem::absolute(file_path).string()){
+                            std::cout << "[MESSAGE] Upload complete!" << std::endl;
+                            std::filesystem::remove(file_path);
+                            uploaded = true;
+                            break;
+                        }
+                    }
+                }
+
+                if(!responses.empty()){
+                    last_checked = responses.rbegin()->first;
+                }
+            }
+        }
+
+        mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 200;
+    }
+    
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "\r\n");
+    return 200;
 }

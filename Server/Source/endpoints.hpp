@@ -9,6 +9,7 @@ extern int handle_auth(struct mg_connection* conn, void* data);
 extern int handle_get_state(struct mg_connection* conn, void* data);
 extern int handle_logout(struct mg_connection* conn, void* data);
 extern int handle_chats(struct mg_connection* conn, void* data);
+extern int handle_upload(struct mg_connection* conn, void* data);
 
 extern int get_videos_data_handler(struct mg_connection* conn, void* data); 
 extern int set_video_data_handler(struct mg_connection* conn, void* data);
