@@ -10,9 +10,7 @@ project "ArchivioVideoServer"
     objdir "obj/%{cfg.buildcfg}"
 
     files { "Source/**.cpp", "Source/**.hpp" }
-    includedirs { "Source" }
-
-    links { "civetweb" }
+    includedirs { "Source", "Dependencies" }
 
     filter "system:windows"
         includedirs { "Dependencies/tdlib/include", "Dependencies/MySQL Connector C 6.1/include" }
@@ -37,13 +35,15 @@ project "ArchivioVideoServer"
             "Ws2_32",
             "Crypt32",
             "Psapi",
-            "Normaliz"
+            "Normaliz",
+            "libssl",
+            "libcrypto"
         }
 
         defines { "TDJSON_STATIC_DEFINE", "TD_ENABLE_STATIC", "TDJSON_STATIC_LIBRARY" }
 
     filter "system:linux"
-        links { "tdjson", "mysqlclient", "curl" }
+        links { "tdjson", "mysqlclient", "curl", "ssl", "crypto" }
 
     filter "configurations:Debug"
         defines { "DEBUG" }
