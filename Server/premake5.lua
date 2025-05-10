@@ -42,6 +42,10 @@ project "ArchivioVideoServer"
 
         defines { "TDJSON_STATIC_DEFINE", "TD_ENABLE_STATIC", "TDJSON_STATIC_LIBRARY" }
 
+        postbuildcommands {
+            '{COPY} "Dependencies/dlls/*" "%{cfg.targetdir}"'
+        }
+
     filter "system:linux"
         links { "tdjson", "mysqlclient", "curl", "ssl", "crypto" }
 

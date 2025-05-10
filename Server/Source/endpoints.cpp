@@ -24,7 +24,7 @@ void setup_endpoints()
     // telegram routes
     svr.Get("/get_files", handle_get_files);
     svr.Get("/video", handle_video);
-    svr.Get("/auth", handle_auth);
+    svr.Post("/auth", handle_auth);
     svr.Get("/auth/get_state", handle_get_state);
     svr.Get("/logout", handle_logout);
     svr.Get("/get_chats", handle_chats);
@@ -229,113 +229,105 @@ int handle_get_files(const httplib::Request& req, httplib::Response& res)
 
 int handle_auth(const httplib::Request& req, httplib::Response& res)
 {
-    if (req.method == "POST") {
-        // Get the POST data
-        std::string post_data = req.body;
+    // Get the POST data
+    std::string post_data = req.body;
 
-        if (!post_data.empty()) {
-            // Parse the JSON from POST data
-            json request_json = json::parse(post_data);
+    if (!post_data.empty()) {
+        // Parse the JSON from POST data
+        json request_json = json::parse(post_data);
 
-            if (request_json.contains("start_auth")) { // Initiate authentication process
-                uint32_t session_id = 0;
+        std::cout << "REQUEST\n" << request_json.dump(4) << std::endl;
 
-                if (request_json.contains("session_id") && request_json["session_id"] != 0) { // Client already logged in
-                    session_id = std::stoul(request_json["session_id"].get<std::string>());
-                }
-                else { // New client, generate session id
-                    session_id = rand_uint32();
-                }
+        if (request_json.contains("start_auth")) { // Initiate authentication process
+            uint32_t session_id = 0;
 
-                std::shared_ptr<ClientSession> session = getSession(session_id);
-                std::string directory = std::to_string(session_id);
-
-                session->send({ {"@type", "getAuthorizationState"} });
-                td_auth_send_parameters(session, APP_API_ID, APP_API_HASH, directory);
-
-                // Set response headers and content
-                res.status = 200;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_header("Content-Type", "application/json");
-
-                json response_json = { {"status", "success"}, {"session_id", session_id} };
-                std::string response_str = response_json.dump();
-                res.set_content(response_str, "application/json");
-
-                return 200;
+            if (request_json.contains("session_id") && request_json["session_id"] != 0) { // Client already logged in
+                session_id = std::stoul(request_json["session_id"].get<std::string>());
+            }
+            else { // New client, generate session id
+                session_id = rand_uint32();
             }
 
-            // To continue the authentication, the client must have a session open
-            if (!request_json.contains("session_id")) {
-                std::cerr << "[ERROR] Missing session_id in JSON." << std::endl;
-                res.status = 400;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_header("Content-Type", "application/json");
-                res.set_content("{\"status\": \"error\", \"message\": \"Missing session_id\"}", "application/json");
-                return 400;
-            }
-
-            uint32_t session_id = std::stoul(request_json["session_id"].get<std::string>());
             std::shared_ptr<ClientSession> session = getSession(session_id);
+            std::string directory = std::to_string(session_id);
 
-            if (request_json.contains("phone_number")) {
-                std::string phone_number = request_json["phone_number"];
-                td_auth_send_number(session, phone_number);
+            session->send({ {"@type", "getAuthorizationState"} });
+            td_auth_send_parameters(session, APP_API_ID, APP_API_HASH, directory);
 
-                res.status = 200;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_header("Content-Type", "application/json");
-                res.set_content("{\"status\": \"success\"}", "application/json");
+            // Set response headers and content
+            res.status = 200;
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Content-Type", "application/json");
 
-                return 200;
-            }
-            else if (request_json.contains("code")) {
-                std::string code = request_json["code"];
-                td_auth_send_code(session, code);
+            json response_json = { {"status", "success"}, {"session_id", session_id} };
+            std::string response_str = response_json.dump();
+            res.set_content(response_str, "application/json");
 
-                res.status = 200;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_header("Content-Type", "application/json");
-                res.set_content("{\"status\": \"success\"}", "application/json");
-
-                return 200;
-            }
-            else if (request_json.contains("password")) {
-                std::string password = request_json["password"];
-                td_auth_send_password(session, password);
-
-                res.status = 200;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_header("Content-Type", "application/json");
-                res.set_content("{\"status\": \"success\"}", "application/json");
-
-                return 200;
-            }
-            else {
-                std::cerr << "[ERROR] Missing required fields in JSON." << std::endl;
-                res.status = 400;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_header("Content-Type", "application/json");
-                res.set_content("{\"status\": \"error\", \"message\": \"Missing required fields\"}", "application/json");
-                return 400;
-            }
+            return 200;
         }
-        else {
-            std::cerr << "[ERROR] No POST data received." << std::endl;
+
+        // To continue the authentication, the client must have a session open
+        if (!request_json.contains("session_id")) {
+            std::cerr << "[ERROR] Missing session_id in JSON." << std::endl;
             res.status = 400;
             res.set_header("Access-Control-Allow-Origin", "*");
             res.set_header("Content-Type", "application/json");
-            res.set_content("{\"status\": \"error\", \"message\": \"No POST data received\"}", "application/json");
+            res.set_content("{\"status\": \"error\", \"message\": \"Missing session_id\"}", "application/json");
+            return 400;
+        }
+
+        uint32_t session_id = std::stoul(request_json["session_id"].get<std::string>());
+        std::shared_ptr<ClientSession> session = getSession(session_id);
+
+        if (request_json.contains("phone_number")) {
+            std::string phone_number = request_json["phone_number"];
+            td_auth_send_number(session, phone_number);
+
+            res.status = 200;
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Content-Type", "application/json");
+            res.set_content("{\"status\": \"success\"}", "application/json");
+
+            return 200;
+        }
+        else if (request_json.contains("code")) {
+            std::string code = request_json["code"];
+            td_auth_send_code(session, code);
+
+            res.status = 200;
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Content-Type", "application/json");
+            res.set_content("{\"status\": \"success\"}", "application/json");
+
+            return 200;
+        }
+        else if (request_json.contains("password")) {
+            std::string password = request_json["password"];
+            td_auth_send_password(session, password);
+
+            res.status = 200;
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Content-Type", "application/json");
+            res.set_content("{\"status\": \"success\"}", "application/json");
+
+            return 200;
+        }
+        else {
+            std::cerr << "[ERROR] Missing required fields in JSON." << std::endl;
+            res.status = 400;
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Content-Type", "application/json");
+            res.set_content("{\"status\": \"error\", \"message\": \"Missing required fields\"}", "application/json");
             return 400;
         }
     }
     else {
-        std::cerr << "[ERROR] Unsupported request method: " << req.method << std::endl;
-        res.status = 405;
+        std::cerr << "[ERROR] No POST data received." << std::endl;
+        res.status = 400;
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_header("Content-Type", "application/json");
-        res.set_content("{\"status\": \"error\", \"message\": \"Method Not Allowed\"}", "application/json");
-        return 405;
+        res.set_content("{\"status\": \"error\", \"message\": \"No POST data received\"}", "application/json");
+        return 400;
     }
 }
 
@@ -579,9 +571,11 @@ int get_videos_data_handler(const httplib::Request& req, httplib::Response& res)
     }
 }
 
+static std::unordered_map<std::string, std::shared_ptr<std::mutex>> file_mutexes;
+static std::unordered_map<std::string, uint64_t> preallocated_files;
+
 int handle_upload(const httplib::Request& req, httplib::Response& res)
 {
-    // Extract headers from the request
     auto range = req.get_header_value("Content-Range");
     auto session_id_h = req.get_header_value("session_id");
     auto chat_id_h = req.get_header_value("chat_id");
@@ -612,22 +606,28 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
         std::cout << start << " " << end << " " << size << std::endl;
 
         std::string file_path = "tmp/" + std::string(file_name_h);
-
         std::cout << file_path << std::endl;
 
         if (!std::filesystem::exists("tmp")) {
             std::filesystem::create_directory("tmp");
         }
 
-        std::ofstream file;
+        auto& file_mutex = file_mutexes[file_name_h];
+        if (!file_mutex) file_mutex = std::make_shared<std::mutex>();
 
-        if (start == 0) {
-            file.open(file_path, std::ios::binary);
-        }
-        else {
-            file.open(file_path, std::ios::binary | std::ios::app);
+        std::unique_lock<std::mutex> lock(*file_mutex, std::defer_lock);
+
+        lock.lock();
+
+        if (preallocated_files.find(file_path) == preallocated_files.end()) {
+            std::ofstream prealloc(file_path, std::ios::binary | std::ios::trunc);
+            prealloc.seekp(size - 1);
+            prealloc.write("", 1); // Preallocate size bytes
+            prealloc.close();
+            preallocated_files[file_path] = 0;
         }
 
+        std::ofstream file(file_path, std::ios::binary | std::ios::in | std::ios::out);
         if (!file) {
             std::cerr << "[ERROR] Failed to open file: " << file_path << std::endl;
             res.status = 500;
@@ -636,61 +636,70 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
             return 500;
         }
 
-        // Write the received chunk to the file
+        file.seekp(start);
         file.write(req.body.c_str(), req.body.size());
-        file.close();
 
-        if (end == size - 1) {
-            // Parse chat_id and session_id
+        preallocated_files[file_path] += req.body.size();
+
+        std::cout << "[DEBUG] Received " << preallocated_files[file_path] << " of " << size << std::endl;
+
+        if (preallocated_files[file_path] == size) {
+            lock.unlock();
+
+            std::string local_path = std::filesystem::absolute(file_path).string();
             int64_t chat_id = std::stoll(chat_id_h);
             int64_t session_id = std::stoll(session_id_h);
 
-            std::shared_ptr<ClientSession> session = getSession(session_id);
+            std::thread([=]() {
+                std::shared_ptr<ClientSession> session = getSession(session_id);
 
-            // Sending video file to the chat
-            session->send({
-                {"@type", "sendMessage"},
-                {"chat_id", chat_id},
-                {"input_message_content", {
-                  {"@type", "inputMessageVideo"},
-                  {"video", {
-                    {"@type", "inputFileLocal"},
-                    {"path", file_path}
-                  }}
-                }}
+                session->send({
+                    {"@type", "sendMessage"},
+                    {"chat_id", chat_id},
+                    {"input_message_content", {
+                        {"@type", "inputMessageVideo"},
+                        {"video", {
+                            {"@type", "inputFileLocal"},
+                            {"path", local_path}
+                        }},
+                        {"supports_streaming", true}
+                    }}
                 });
 
-            std::cout << "[MESSAGE] Sending to chat " << chat_id << std::endl;
+                std::cout << "[MESSAGE] Sending to chat " << chat_id << std::endl;
 
-            uint32_t last_checked = 0;
-            bool uploaded = false;
+                uint32_t last_checked = 0;
+                bool uploaded = false;
 
-            // Wait for upload completion
-            while (!uploaded) {
-                auto responses = session->getResponses()->get_all(last_checked);
+                while (!uploaded) {
+                    auto responses = session->getResponses()->get_all(last_checked);
 
-                for (auto r = responses.rbegin(); r != responses.rend(); r++) {
-                    last_checked = r->first;
+                    for (auto r = responses.rbegin(); r != responses.rend(); r++) {
+                        json response = r->second;
 
-                    nlohmann::json response = r->second;
+                        std::cout << response.dump(4) << std::endl;
 
-                    if (!response.is_null() && response["@type"] == "updateFile") {
-                        std::string res_file_path = response["file"]["local"]["path"];
-                        bool upload_complete = response["file"]["local"]["is_downloading_completed"];
+                        if (!response.is_null() && response["@type"] == "updateFile") {
+                            std::string res_file_path = response["file"]["local"]["path"];
+                            bool upload_complete = response["file"]["local"]["is_uploading_completed"] == "true";
 
-                        if (upload_complete && res_file_path == std::filesystem::absolute(file_path).string()) {
-                            std::cout << "[MESSAGE] Upload complete!" << std::endl;
-                            std::filesystem::remove(file_path);
-                            uploaded = true;
-                            break;
+                            if (upload_complete && res_file_path == local_path) {
+                                std::cout << "[MESSAGE] Upload complete!" << std::endl;
+                                std::filesystem::remove(local_path);
+                                uploaded = true;
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (!responses.empty()) {
-                    last_checked = responses.rbegin()->first;
+                    if (!responses.empty()) {
+                        last_checked = responses.rbegin()->first;
+                    }
                 }
-            }
+                }).detach();
+        }
+        else {
+            lock.unlock();
         }
 
         res.status = 200;

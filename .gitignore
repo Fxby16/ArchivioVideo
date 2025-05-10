@@ -9,3 +9,4 @@ Server/Source/app_data.hpp
 .vs
 *.sln
 *.vcxproj*
+tmp
