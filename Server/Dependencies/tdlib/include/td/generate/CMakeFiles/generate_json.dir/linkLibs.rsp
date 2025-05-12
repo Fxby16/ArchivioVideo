@@ -1,1 +1,0 @@
- ../../tdtl/libtdtl.a ../../tdutils/libtdutils.a C:/msys64/mingw64/lib/libcrypto.dll.a C:/msys64/mingw64/lib/libz.dll.a -lws2_32 -lmswsock -lcrypt32 C:/msys64/mingw64/lib/libz.dll.a -lws2_32 -lmswsock -lcrypt32 -lnormaliz -lpsapi -lshell32 -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

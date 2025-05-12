@@ -1,0 +1,14 @@
+prefix=/home/fabio/ffmpeg-static
+exec_prefix=${prefix}
+libdir=/home/fabio/ffmpeg-static/lib
+includedir=/home/fabio/ffmpeg-static/include
+
+Name: libswresample
+Description: FFmpeg audio resampling library
+Version: 6.0.100
+Requires: libavutil >= 60.2.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lswresample -lm -latomic
+Libs.private: 
+Cflags: -I${includedir}

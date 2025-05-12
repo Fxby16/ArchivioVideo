@@ -1,0 +1,14 @@
+prefix=/home/fabio/ffmpeg-static
+exec_prefix=${prefix}
+libdir=/home/fabio/ffmpeg-static/lib
+includedir=/home/fabio/ffmpeg-static/include
+
+Name: libavformat
+Description: FFmpeg container format library
+Version: 62.0.102
+Requires: libavcodec >= 62.3.101, libswresample >= 6.0.100, libavutil >= 60.2.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavformat -lm -latomic -lbz2 -lz
+Libs.private: 
+Cflags: -I${includedir}

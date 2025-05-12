@@ -10,3 +10,4 @@ Server/Source/app_data.hpp
 *.sln
 *.vcxproj*
 tmp
+*.log

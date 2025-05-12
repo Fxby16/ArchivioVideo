@@ -13,8 +13,8 @@ project "ArchivioVideoServer"
     includedirs { "Source", "Dependencies" }
 
     filter "system:windows"
-        includedirs { "Dependencies/tdlib/include", "Dependencies/MySQL Connector C 6.1/include" }
-        libdirs { "Dependencies/tdlib/lib/Release", "Dependencies/MySQL Connector C 6.1/lib" }
+        includedirs { "Dependencies/Windows/tdlib/include", "Dependencies/Windows/MySQL Connector C 6.1/include" }
+        libdirs { "Dependencies/Windows/tdlib/lib/Release", "Dependencies/Windows/MySQL Connector C 6.1/lib" }
 
         links {
             "libcurl",
@@ -44,11 +44,37 @@ project "ArchivioVideoServer"
         defines { "TDJSON_STATIC_DEFINE", "TD_ENABLE_STATIC", "TDJSON_STATIC_LIBRARY" }
 
         postbuildcommands {
-            '{COPY} "Dependencies/dlls/*" "%{cfg.targetdir}"'
+            '{COPY} "Dependencies/dlls/*" "%{cfg.targetdir}"',
+            '{COPY} "./*.pem" "%{cfg.targetdir}"'
         }
 
     filter "system:linux"
-        links { "tdjson", "mysqlclient", "curl", "ssl", "crypto" }
+        libdirs { "Dependencies/Linux/ffmpeg-static/lib", "Dependencies/Linux/td" }
+        includedirs { "Dependencies/Linux/ffmpeg-static/include", "Dependencies/Linux/td" }
+        links { 
+            "tdjson", 
+            "mysqlclient", 
+            "curl", 
+            "ssl", 
+            "crypto", 
+            "avformat", 
+            "avcodec", 
+            "avutil", 
+            "swresample",
+            "lzma",
+            "drm",
+            "X11", 
+            "vdpau",
+            "va",
+            "va-drm",
+            "va-x11", 
+            "z", 
+            "bz2" 
+        }
+
+        postbuildcommands {
+            '{COPY} "./*.pem" "%{cfg.targetdir}"'
+        }
 
     filter "configurations:Debug"
         defines { "DEBUG" }
