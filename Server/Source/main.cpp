@@ -1,14 +1,7 @@
-#include <td/telegram/td_json_client.h>
-#include <civetweb.h>
-#include <nlohmann/json.hpp>
-#include <iostream>
-#include <fstream>
 #include <thread>
-#include <chrono>
-#include <string>
-#include <vector>
-#include <mutex>
+#include <atomic>
 #include <csignal> 
+#include <iostream>
 
 #include "auth.hpp"
 #include "common.hpp"

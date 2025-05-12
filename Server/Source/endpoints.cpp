@@ -6,6 +6,7 @@
 #include "session.hpp"
 #include "random.hpp"
 #include "db.hpp"
+#include "ffmpeg.hpp"
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <httplib.h>
@@ -414,16 +415,17 @@ int handle_logout(const httplib::Request& req, httplib::Response& res)
 //DA SALVARE NEL DB (ANCORA DA TESTARE)
 int set_video_data_handler(const httplib::Request& req, httplib::Response& res)
 {
-    if(req.method == "POST"){
+    if (req.method == "POST") {
         std::string content_type(128, '\0');
         std::string content_type_header = req.get_header_value("Content-Type");
 
-        if(!content_type_header.empty() && sscanf(content_type_header.c_str(), "multipart/form-data; boundary=%127s", content_type.data()) == 1) {
+        if (!content_type_header.empty() && sscanf(content_type_header.c_str(), "multipart/form-data; boundary=%127s", content_type.data()) == 1) {
             std::string boundary = "--" + content_type;
             std::string current_part;
 
             // Memorizza i dati del form
-            std::string title, description, uploader, image_data;
+            std::string title, description, image_data, extension, original_filename;
+            int64_t chat_id = 0, message_id = 0;
 
             // Il corpo della richiesta è già disponibile in req.body
             current_part = req.body;
@@ -448,49 +450,70 @@ int set_video_data_handler(const httplib::Request& req, httplib::Response& res)
                     else if (headers.find("Content-Disposition: form-data; name=\"description\"") != std::string::npos) {
                         description = content;
                     }
-                    // Analizza il campo "uploader"
-                    else if (headers.find("Content-Disposition: form-data; name=\"uploader\"") != std::string::npos) {
-                        uploader = content;
-                    }
                     // Analizza il campo "image"
                     else if (headers.find("Content-Disposition: form-data; name=\"image\"") != std::string::npos) {
                         image_data = content;
+                        size_t filename_pos = headers.find("filename=\"");
+
+                        if (filename_pos != std::string::npos) {
+                            size_t start = filename_pos + 10; // Skip "filename=\""
+                            size_t end = headers.find("\"", start);
+                            if (end != std::string::npos) {
+                                original_filename = headers.substr(start, end - start);
+                                extension = original_filename.substr(original_filename.find_last_of('.'));
+                            }
+                        }
+                    }
+                    else if (headers.find("Content-Disposition: form-data; name=\"chat_id\"") != std::string::npos) {
+                        chat_id = std::stoll(content);
+                    }
+                    else if (headers.find("Content-Disposition: form-data; name=\"message_id\"") != std::string::npos) {
+                        message_id = std::stoll(content);
                     }
                 }
             }
 
-            if(!title.empty() && !description.empty() && !uploader.empty() && !image_data.empty()){
-                // Process the received data
-                std::cout << "Title: " << title << std::endl;
-                std::cout << "Description: " << description << std::endl;
-                std::cout << "Uploader: " << uploader << std::endl;
-                std::cout << "Image size: " << image_data.size() << " bytes" << std::endl;
-
-                // Save the image to a file (example)
-                std::ofstream image_file("uploaded_image.jpg", std::ios::binary);
+            if (!title.empty() && !description.empty() && !image_data.empty()) {
+                std::string uploaded_filename = random_string(20) + extension;
+                std::ofstream image_file(uploaded_filename, std::ios::binary);
                 image_file.write(image_data.c_str(), image_data.size());
                 image_file.close();
+
+                json jres = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";");
+                if (jres.empty()) {
+                    db_execute("INSERT INTO telegram_video (chat_id, message_id) VALUES (" + std::to_string(chat_id) + ", " + std::to_string(message_id) + ");");
+                }
+
+                db_execute("INSERT INTO image(original_filename, saved_filename) VALUES ('" + original_filename + "', '" + uploaded_filename + "');");
+
+                unsigned int image_id = std::stoul(db_select("SELECT id FROM image WHERE original_filename = '" + original_filename + "' AND saved_filename = '" + uploaded_filename + "';")[0]["id"].get<std::string>());
+                unsigned int video_id = std::stoul(db_select("SELECT id FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";")[0]["id"].get<std::string>());
+
+                db_execute("INSERT INTO video(title, description, data_caricamento, telegram_video_id, thumbnail_id) VALUES ('" + title + "', '" + description + "', CURDATE(), " + std::to_string(video_id) + ", " + std::to_string(image_id) + ");");
 
                 res.status = 200;
                 res.set_header("Access-Control-Allow-Origin", "*");
                 res.set_header("Content-Type", "application/json");
                 res.set_content("{\"status\": \"success\"}", "application/json");
                 return 200;
-            }else{
+            }
+            else {
                 std::cerr << "[ERROR] Missing required parameters in request." << std::endl;
                 res.status = 400;
                 res.set_header("Access-Control-Allow-Origin", "*");
                 res.set_content("{\"status\": \"error\", \"message\": \"Missing required parameters\"}", "application/json");
                 return 400;
             }
-        }else{
+        }
+        else {
             std::cerr << "[ERROR] Missing Content-Type header in request." << std::endl;
             res.status = 400;
             res.set_header("Access-Control-Allow-Origin", "*");
             res.set_content("{\"status\": \"error\", \"message\": \"Missing Content-Type header\"}", "application/json");
             return 400;
         }
-    }else{
+    }
+    else {
         std::cerr << "[ERROR] Unsupported request method " << req.method << std::endl;
         res.status = 405;
         res.set_header("Access-Control-Allow-Origin", "*");
@@ -647,48 +670,83 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
             lock.unlock();
 
             std::string local_path = std::filesystem::absolute(file_path).string();
+            // Sometimes Telegram is not able to get video metadata, so I do it here manually.
+            VideoMetadata meta = get_video_metadata(local_path);
             int64_t chat_id = std::stoll(chat_id_h);
-            int64_t session_id = std::stoll(session_id_h);
+            uint32_t session_id = std::stoul(session_id_h);
 
             std::thread([=]() {
                 std::shared_ptr<ClientSession> session = getSession(session_id);
 
-                session->send({
-                    {"@type", "sendMessage"},
-                    {"chat_id", chat_id},
-                    {"input_message_content", {
-                        {"@type", "inputMessageVideo"},
-                        {"video", {
-                            {"@type", "inputFileLocal"},
-                            {"path", local_path}
-                        }},
-                        {"supports_streaming", true}
-                    }}
-                });
+                if ((meta.valid)) {
+                    std::cout << meta.duration << " " << meta.width << " " << meta.height << std::endl;
 
-                std::cout << "[MESSAGE] Sending to chat " << chat_id << std::endl;
+                    session->send({
+                        {"@type", "sendMessage"},
+                        {"chat_id", chat_id},
+                        {"input_message_content", {
+                            {"@type", "inputMessageVideo"},
+                            {"video", {
+                                {"@type", "inputFileLocal"},
+                                {"path", local_path}
+                            }},
+                            {"duration", meta.duration},
+                            {"width", meta.width},
+                            {"height", meta.height},
+                            {"supports_streaming", true}
+                        }}
+                    });
+                }else {
+                    session->send({
+                        {"@type", "sendMessage"},
+                        {"chat_id", chat_id},
+                        {"input_message_content", {
+                            {"@type", "inputMessageVideo"},
+                            {"video", {
+                                {"@type", "inputFileLocal"},
+                                {"path", local_path}
+                            }},
+                            {"supports_streaming", true}
+                        }}
+                        });
+                }
 
                 uint32_t last_checked = 0;
                 bool uploaded = false;
+                int64_t message_id = 0;
 
-                while (!uploaded) {
+                while (!uploaded || message_id == 0) {
                     auto responses = session->getResponses()->get_all(last_checked);
 
                     for (auto r = responses.rbegin(); r != responses.rend(); r++) {
                         json response = r->second;
 
-                        std::cout << response.dump(4) << std::endl;
-
                         if (!response.is_null() && response["@type"] == "updateFile") {
                             std::string res_file_path = response["file"]["local"]["path"];
-                            bool upload_complete = response["file"]["local"]["is_uploading_completed"] == "true";
+                            bool upload_complete = response["file"]["remote"]["is_uploading_completed"];
 
-                            if (upload_complete && res_file_path == local_path) {
-                                std::cout << "[MESSAGE] Upload complete!" << std::endl;
+                            if (!uploaded && upload_complete && res_file_path == local_path) {
                                 std::filesystem::remove(local_path);
                                 uploaded = true;
-                                break;
                             }
+                        }
+
+                        if (!response.is_null() && message_id == 0 && response["@type"] == "updateNewMessage") {
+                            const json& msg = response["message"];
+
+                            if (msg.contains("chat_id") && msg["chat_id"] == chat_id &&
+                                msg.contains("content") &&
+                                msg["content"].contains("video") &&
+                                msg["content"]["video"]["video"]["local"]["path"] == local_path) {
+
+                                message_id = msg["id"];
+
+                                db_execute("INSERT INTO telegram_video(message_id, chat_id) VALUES(" + std::to_string(message_id) + ", " + std::to_string(chat_id) + ");");
+                            }
+                        }
+
+                        if (message_id && uploaded) {
+                            break;
                         }
                     }
 

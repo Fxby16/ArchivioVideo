@@ -1,5 +1,4 @@
 #include "session.hpp"
-
 #include <td/telegram/td_json_client.h>
 #include <iostream>
 

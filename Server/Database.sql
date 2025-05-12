@@ -10,12 +10,6 @@ CREATE TABLE image(id int PRIMARY KEY AUTO_INCREMENT,
                    original_filename varchar(255),
                    saved_filename varchar(255));
 
-CREATE TABLE user(id int PRIMARY KEY AUTO_INCREMENT,
-                  numero_telefono varchar(13),
-                  username varchar(255),
-                  avatar_id int,
-                  FOREIGN KEY(avatar_id) REFERENCES image(id));
-
 CREATE TABLE video(id INT PRIMARY KEY AUTO_INCREMENT,
                    title varchar(255),
                    description text,

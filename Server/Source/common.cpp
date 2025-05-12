@@ -1,7 +1,6 @@
 #include "common.hpp"
 
 #include <td/telegram/td_json_client.h>
-
 #include <string>
 #include <iostream>
 
@@ -64,4 +63,27 @@ std::map<std::string, std::string> parse_query_string(const std::string& query_s
     }
 
     return std::move(params);
+}
+
+std::string get_format_from_filename(const std::string& path) 
+{
+    size_t dot_pos = path.find_last_of('.');
+    if (dot_pos == std::string::npos)
+        return ""; // Nessuna estensione trovata
+
+    std::string ext = path.substr(dot_pos + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower); // Rendi minuscolo
+    return ext;
+}
+
+std::string random_string(size_t length)
+{
+    srand(time(nullptr));
+    const char charset[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    std::string result;
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i) {
+        result += charset[rand() % (sizeof(charset) - 1)];
+    }
+    return result;
 }

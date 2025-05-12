@@ -29,7 +29,6 @@ project "ArchivioVideoServer"
             "tde2e",
             "tdnet",
             "tdutils",
-            "tdtl",
             "tdapi",
             "tdmtproto",
             "Ws2_32",
@@ -37,7 +36,9 @@ project "ArchivioVideoServer"
             "Psapi",
             "Normaliz",
             "libssl",
-            "libcrypto"
+            "libcrypto",
+            "avformat",
+            "avutil"
         }
 
         defines { "TDJSON_STATIC_DEFINE", "TD_ENABLE_STATIC", "TDJSON_STATIC_LIBRARY" }
