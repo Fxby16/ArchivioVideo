@@ -49,7 +49,7 @@ project "ArchivioVideoServer"
         }
 
     filter "system:linux"
-        libdirs { "Dependencies/Linux/ffmpeg-static/lib", "Dependencies/Linux/td" }
+        libdirs { "Dependencies/Linux/ffmpeg-static/lib", "Dependencies/Linux/td/lib" }
         includedirs { "Dependencies/Linux/ffmpeg-static/include", "Dependencies/Linux/td" }
         links { 
             "tdjson", 
@@ -73,7 +73,8 @@ project "ArchivioVideoServer"
         }
 
         postbuildcommands {
-            '{COPY} "./*.pem" "%{cfg.targetdir}"'
+            '{COPY} "./*.pem" "%{cfg.targetdir}"',
+            '{COPY} "Dependencies/Linux/td/lib/*" "%{cfg.targetdir}"'
         }
 
     filter "configurations:Debug"
