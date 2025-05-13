@@ -19,8 +19,6 @@ void setup_endpoints()
     std::cout << "Setting up endpoints" << std::endl;
 
     httplib::SSLServer svr("./cert.pem", "./key.pem");
-    svr.set_read_timeout(5, 0); // 5 secondi
-    svr.set_payload_max_length(10 * 1024 * 1024); // 10MB
 
     std::cout << "Server initialized" << std::endl;
 
@@ -36,7 +34,7 @@ void setup_endpoints()
 
     // db routes
     svr.Post("/set_video_data", set_video_data_handler);
-    svr.Get("/get_videos_data", get_videos_data_handler);
+    svr.Post("/get_videos_data", get_videos_data_handler);
 
     svr.listen("0.0.0.0", 10000);
 
@@ -240,8 +238,6 @@ int handle_auth(const httplib::Request& req, httplib::Response& res)
         // Parse the JSON from POST data
         json request_json = json::parse(post_data);
 
-        std::cout << "REQUEST\n" << request_json.dump(4) << std::endl;
-
         if (request_json.contains("start_auth")) { // Initiate authentication process
             uint32_t session_id = 0;
 
@@ -386,20 +382,14 @@ int handle_logout(const httplib::Request& req, httplib::Response& res)
     std::shared_ptr<ClientSession> session = getSession(session_id);
 
     session->send({{"@type", "logOut"}});
-    
-    std::cout << "[MESSAGE] Logging out..." << std::endl;
 
     while(td_auth_get_state(session) != "authorizationStateClosed"){
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 
-    std::cout << "[MESSAGE] Logged out successfully!" << std::endl;
-
     session->send({{"@type", "close"}});
 
     closeSession(session_id);
-
-    std::cout << "[MESSAGE] Session closed!" << std::endl;
 
     std::filesystem::path session_dir = std::filesystem::path("UserData") / std::to_string(session_id);
 
@@ -572,8 +562,6 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
     auto chat_id_h = req.get_header_value("chat_id");
     auto file_name_h = req.get_header_value("file_name");
 
-    std::cout << "Received connection" << std::endl;
-
     if (req.method != "POST") {
         std::cerr << "[ERROR] Unsupported request method: " << req.method << std::endl;
         res.status = 405;
@@ -581,8 +569,6 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
         res.set_content("Method Not Allowed", "text/plain");
         return 405;
     }
-
-    std::cout << range << std::endl;
 
     if (!range.empty()) {
         int start, end, size;
@@ -594,10 +580,7 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
             return 416;
         }
 
-        std::cout << start << " " << end << " " << size << std::endl;
-
         std::string file_path = "tmp/" + std::string(file_name_h);
-        std::cout << file_path << std::endl;
 
         if (!std::filesystem::exists("tmp")) {
             std::filesystem::create_directory("tmp");
@@ -632,8 +615,6 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
 
         preallocated_files[file_path] += req.body.size();
 
-        std::cout << "[DEBUG] Received " << preallocated_files[file_path] << " of " << size << std::endl;
-
         if (preallocated_files[file_path] == size) {
             lock.unlock();
 
@@ -647,8 +628,6 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
                 std::shared_ptr<ClientSession> session = getSession(session_id);
 
                 if ((meta.valid)) {
-                    std::cout << meta.duration << " " << meta.width << " " << meta.height << std::endl;
-
                     session->send({
                         {"@type", "sendMessage"},
                         {"chat_id", chat_id},
