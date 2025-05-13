@@ -6,6 +6,7 @@
 
 extern void setup_endpoints();
 extern int handle_video(const httplib::Request&, httplib::Response&);
+extern int handle_image(const httplib::Request&, httplib::Response&);
 extern int handle_get_files(const httplib::Request&, httplib::Response&);
 extern int handle_auth(const httplib::Request&, httplib::Response&);
 extern int handle_get_state(const httplib::Request&, httplib::Response&);

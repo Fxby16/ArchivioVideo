@@ -19,12 +19,15 @@ void setup_endpoints()
     std::cout << "Setting up endpoints" << std::endl;
 
     httplib::SSLServer svr("./cert.pem", "./key.pem");
+    svr.set_read_timeout(5, 0); // 5 secondi
+    svr.set_payload_max_length(10 * 1024 * 1024); // 10MB
 
     std::cout << "Server initialized" << std::endl;
 
     // telegram routes
     svr.Get("/get_files", handle_get_files);
     svr.Get("/video", handle_video);
+    svr.Get("/image", handle_image);
     svr.Post("/auth", handle_auth);
     svr.Get("/auth/get_state", handle_get_state);
     svr.Get("/logout", handle_logout);
@@ -412,114 +415,79 @@ int handle_logout(const httplib::Request& req, httplib::Response& res)
     return 200;
 }
 
-//DA SALVARE NEL DB (ANCORA DA TESTARE)
 int set_video_data_handler(const httplib::Request& req, httplib::Response& res)
 {
-    if (req.method == "POST") {
-        std::string content_type(128, '\0');
-        std::string content_type_header = req.get_header_value("Content-Type");
-
-        if (!content_type_header.empty() && sscanf(content_type_header.c_str(), "multipart/form-data; boundary=%127s", content_type.data()) == 1) {
-            std::string boundary = "--" + content_type;
-            std::string current_part;
-
-            // Memorizza i dati del form
-            std::string title, description, image_data, extension, original_filename;
-            int64_t chat_id = 0, message_id = 0;
-
-            // Il corpo della richiesta è già disponibile in req.body
-            current_part = req.body;
-
-            // Processa ciascuna parte del form
-            size_t boundary_pos = 0;
-            while ((boundary_pos = current_part.find(boundary)) != std::string::npos) {
-                std::string part = current_part.substr(0, boundary_pos);
-                current_part.erase(0, boundary_pos + boundary.size());
-
-                // Trova l'end del header
-                size_t header_end = part.find("\r\n\r\n");
-                if (header_end != std::string::npos) {
-                    std::string headers = part.substr(0, header_end);
-                    std::string content = part.substr(header_end + 4);
-
-                    // Analizza il campo "title"
-                    if (headers.find("Content-Disposition: form-data; name=\"title\"") != std::string::npos) {
-                        title = content;
-                    }
-                    // Analizza il campo "description"
-                    else if (headers.find("Content-Disposition: form-data; name=\"description\"") != std::string::npos) {
-                        description = content;
-                    }
-                    // Analizza il campo "image"
-                    else if (headers.find("Content-Disposition: form-data; name=\"image\"") != std::string::npos) {
-                        image_data = content;
-                        size_t filename_pos = headers.find("filename=\"");
-
-                        if (filename_pos != std::string::npos) {
-                            size_t start = filename_pos + 10; // Skip "filename=\""
-                            size_t end = headers.find("\"", start);
-                            if (end != std::string::npos) {
-                                original_filename = headers.substr(start, end - start);
-                                extension = original_filename.substr(original_filename.find_last_of('.'));
-                            }
-                        }
-                    }
-                    else if (headers.find("Content-Disposition: form-data; name=\"chat_id\"") != std::string::npos) {
-                        chat_id = std::stoll(content);
-                    }
-                    else if (headers.find("Content-Disposition: form-data; name=\"message_id\"") != std::string::npos) {
-                        message_id = std::stoll(content);
-                    }
-                }
-            }
-
-            if (!title.empty() && !description.empty() && !image_data.empty()) {
-                std::string uploaded_filename = random_string(20) + extension;
-                std::ofstream image_file(uploaded_filename, std::ios::binary);
-                image_file.write(image_data.c_str(), image_data.size());
-                image_file.close();
-
-                json jres = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";");
-                if (jres.empty()) {
-                    db_execute("INSERT INTO telegram_video (chat_id, message_id) VALUES (" + std::to_string(chat_id) + ", " + std::to_string(message_id) + ");");
-                }
-
-                db_execute("INSERT INTO image(original_filename, saved_filename) VALUES ('" + original_filename + "', '" + uploaded_filename + "');");
-
-                unsigned int image_id = std::stoul(db_select("SELECT id FROM image WHERE original_filename = '" + original_filename + "' AND saved_filename = '" + uploaded_filename + "';")[0]["id"].get<std::string>());
-                unsigned int video_id = std::stoul(db_select("SELECT id FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";")[0]["id"].get<std::string>());
-
-                db_execute("INSERT INTO video(title, description, data_caricamento, telegram_video_id, thumbnail_id) VALUES ('" + title + "', '" + description + "', CURDATE(), " + std::to_string(video_id) + ", " + std::to_string(image_id) + ");");
-
-                res.status = 200;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_header("Content-Type", "application/json");
-                res.set_content("{\"status\": \"success\"}", "application/json");
-                return 200;
-            }
-            else {
-                std::cerr << "[ERROR] Missing required parameters in request." << std::endl;
-                res.status = 400;
-                res.set_header("Access-Control-Allow-Origin", "*");
-                res.set_content("{\"status\": \"error\", \"message\": \"Missing required parameters\"}", "application/json");
-                return 400;
-            }
-        }
-        else {
-            std::cerr << "[ERROR] Missing Content-Type header in request." << std::endl;
-            res.status = 400;
-            res.set_header("Access-Control-Allow-Origin", "*");
-            res.set_content("{\"status\": \"error\", \"message\": \"Missing Content-Type header\"}", "application/json");
-            return 400;
-        }
+    if (!req.is_multipart_form_data()) {
+        res.status = 400;
+        res.set_content(R"({"status": "error", "message": "Content-Type must be multipart/form-data"})", "application/json");
+        return 400;
     }
-    else {
-        std::cerr << "[ERROR] Unsupported request method " << req.method << std::endl;
-        res.status = 405;
+
+    std::string title, description;
+    int64_t chat_id = 0, message_id = 0;
+
+    // campi testuali
+    if (req.has_file("title")) {
+        title = req.get_file_value("title").content;
+    }
+    if (req.has_file("description")) {
+        description = req.get_file_value("description").content;
+    }
+    if (req.has_file("chat_id")) {
+        chat_id = std::stoll(req.get_file_value("chat_id").content);
+    }
+    if (req.has_file("message_id")) {
+        message_id = std::stoll(req.get_file_value("message_id").content);
+    }
+
+    //immagine
+    std::string original_filename, image_data, extension;
+    if (req.has_file("image")) {
+        const auto& file = req.get_file_value("image");
+        original_filename = file.filename;
+        extension = "." + file.content_type.substr(file.content_type.find('/') + 1);
+        image_data = file.content;
+    }
+
+    // salvataggio immagine e inserimento nel db
+    if (!title.empty() && !description.empty() && !image_data.empty()) {
+        if (!std::filesystem::exists("UserData/Thumbnails")) {
+            std::filesystem::create_directory("UserData/Thumbnails");
+        }
+
+        std::string uploaded_filename = "UserData/Thumbnails/" + random_string(20) + extension;
+        std::ofstream image_file(uploaded_filename, std::ios::binary);
+        image_file.write(image_data.c_str(), image_data.size());
+        image_file.close();
+
+        json jres = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";");
+        if (jres.empty()) {
+            db_execute("INSERT INTO telegram_video (chat_id, message_id) VALUES (" + std::to_string(chat_id) + ", " + std::to_string(message_id) + ");");
+        }
+
+        db_execute("INSERT INTO image(original_filename, saved_filename) VALUES ('" + original_filename + "', '" + uploaded_filename + "');");
+
+        unsigned int image_id = std::stoul(db_select("SELECT id FROM image WHERE original_filename = '" + original_filename + "' AND saved_filename = '" + uploaded_filename + "';")[0]["id"].get<std::string>());
+        unsigned int video_id = std::stoul(db_select("SELECT id FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";")[0]["id"].get<std::string>());
+
+        db_execute("INSERT INTO video(title, description, data_caricamento, telegram_video_id, thumbnail_id) VALUES ('" + title + "', '" + description + "', CURDATE(), " + std::to_string(video_id) + ", " + std::to_string(image_id) + ");");
+
+        res.status = 200;
         res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_content("{\"status\": \"error\", \"message\": \"Unsupported request method " + req.method + "\"}", "application/json");
-        return 405;
-    }
+        res.set_header("Content-Type", "application/json");
+        res.set_content("{\"status\": \"success\"}", "application/json");
+        return 200;
+    } else {
+        std::string error_msg = "Missing required parameters: ";
+        if (title.empty()) error_msg += "title ";
+        if (description.empty()) error_msg += "description ";
+        if (chat_id == 0) error_msg += "chat_id ";
+
+        res.status = 400;
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_content(R"({"status": "error", "message": ")" + error_msg + "\"}", "application/json");
+        return 400;
+    } 
 }
 
 int get_videos_data_handler(const httplib::Request& req, httplib::Response& res)
@@ -553,20 +521,20 @@ int get_videos_data_handler(const httplib::Request& req, httplib::Response& res)
 
         // Process each video in the "videos" array
         for (const auto& video : request_json["videos"]) {
-            int64_t video_id = video["message_id"];
+            int64_t message_id = video["message_id"];
 
             // Query the database for the video
-            json res_db = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND video_id = " + std::to_string(video_id) + ";");
+            json res_db = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";");
 
             // If no result, add the video to the response
             if (res_db.empty()) {
                 out.push_back(video);
             }
             else {
-                unsigned int db_video_id = res_db[0]["video_id"];
+                unsigned int db_video_id = res_db[0]["id"];
 
                 // Query the video data
-                res_db = db_select("SELECT * FROM videos WHERE video_id = " + std::to_string(db_video_id) + ";");
+                res_db = db_select("SELECT * FROM video WHERE telegram_video_id = " + std::to_string(db_video_id) + ";");
                 if (res_db.empty()) {
                     out.push_back(video);
                 }
@@ -770,4 +738,44 @@ int handle_upload(const httplib::Request& req, httplib::Response& res)
     res.set_header("Access-Control-Allow-Origin", "*");
     res.set_content("OK", "text/plain");
     return 200;
+}
+
+int handle_image(const httplib::Request& req, httplib::Response& res)
+{
+    unsigned int image_id = req.has_param("id") ? std::stoul(req.get_param_value("id")) : std::numeric_limits<unsigned int>::max();
+
+    if (image_id == std::numeric_limits<unsigned int>::max()) {
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        res.status = 400;
+        res.set_header("Access-Control-Allow-Origin", "*");
+        return 400;
+    }
+
+    std::string file_path = db_select("SELECT saved_filename FROM image WHERE id = " + std::to_string(image_id) + ";")[0]["saved_filename"];
+
+    if (!file_path.empty() && std::filesystem::exists(file_path)) {
+        std::ifstream file(file_path, std::ios::binary);
+        if (file) {
+            std::vector<char> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            std::string mime_type = "image/" + file_path.substr(file_path.find_last_of('.') + 1);
+
+            res.status = 200;
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Content-Type", mime_type); 
+            res.set_content(buffer.data(), buffer.size(), mime_type);
+            return 200;
+        } else {
+            std::cerr << "[ERROR] Failed to open file: " << file_path << std::endl;
+            res.status = 500;
+            res.set_header("Access-Control-Allow-Origin", "*");
+            return 500;
+        }
+    } else {
+        std::cerr << "[ERROR] File not found: " << file_path << std::endl;
+        res.status = 404;
+        res.set_header("Access-Control-Allow-Origin", "*");
+        return 404;
+    }
 }
