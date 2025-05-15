@@ -14,7 +14,7 @@
 #include <fstream>
 #include <algorithm>
 
-void setup_endpoints()
+void setup_endpoints_https()
 {
     std::cout << "Setting up endpoints" << std::endl;
 
@@ -31,6 +31,7 @@ void setup_endpoints()
     svr.Get("/logout", handle_logout);
     svr.Get("/get_chats", handle_chats);
     svr.Post("/upload", handle_upload);
+    svr.Get("/get_user_info", handle_get_user_info);
 
     // db routes
     svr.Post("/set_video_data", set_video_data_handler);
@@ -39,6 +40,36 @@ void setup_endpoints()
     svr.listen("0.0.0.0", 10000);
 
     std::cout << "Server running on HTTPS port 10000" << std::endl;
+}
+
+void setup_endpoints_http()
+{
+    std::cout << "Setting up endpoints" << std::endl;
+
+    httplib::Server svr;
+    svr.set_read_timeout(20);
+    svr.set_write_timeout(20);
+
+    std::cout << "Server initialized" << std::endl;
+
+    // telegram routes
+    svr.Get("/get_files", handle_get_files);
+    svr.Get("/video", handle_video);
+    svr.Get("/image", handle_image);
+    svr.Post("/auth", handle_auth);
+    svr.Get("/auth/get_state", handle_get_state);
+    svr.Get("/logout", handle_logout);
+    svr.Get("/get_chats", handle_chats);
+    svr.Post("/upload", handle_upload);
+    svr.Get("/get_user_info", handle_get_user_info);
+
+    // db routes
+    svr.Post("/set_video_data", set_video_data_handler);
+    svr.Post("/get_videos_data", get_videos_data_handler);
+
+    svr.listen("0.0.0.0", 10001);
+
+    std::cout << "Server running on HTTP port 10001" << std::endl;
 }
 
 int handle_chats(const httplib::Request& req, httplib::Response& res)
@@ -69,119 +100,164 @@ int handle_chats(const httplib::Request& req, httplib::Response& res)
 
 int handle_video(const httplib::Request& req, httplib::Response& res)
 {
-    const char* range_header = req.get_header_value("Range").c_str();
+    std::cout << "Received request for video" << std::endl;
+    for (const auto& header : req.headers) {
+        std::cout << header.first << ": " << header.second << std::endl;
+    }
 
-    if (range_header && *range_header) {
-        size_t start = 0, end = 0;
-        unsigned int file_id = 0;
-        uint32_t session_id = 0;
+    std::string range_header = req.get_header_value("Range");  // <-- conserva la stringa
+    size_t start = 0, end = 0;
+    unsigned int file_id = 0;
+    uint32_t session_id = 0;
 
-        // Estrai i parametri dalla query string
-        if (req.has_param("file_id")) {
-            file_id = std::stoul(req.get_param_value("file_id"));
-        }
-        else {
-            std::cerr << "[ERROR] Missing file_id parameter in request." << std::endl;
-            res.status = 400;
-            res.set_header("Access-Control-Allow-Origin", "*");
-            return 400;
-        }
+    // Estrai i parametri dalla query string
+    if (req.has_param("file_id")) {
+        file_id = std::stoul(req.get_param_value("file_id"));
+    }
+    else {
+        std::cerr << "[ERROR] Missing file_id parameter in request." << std::endl;
+        res.status = 400;
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_content("{\"error\": \"Missing file_id parameter\"}", "application/json");
+        return 400;
+    }
 
-        if (req.has_param("session_id")) {
-            session_id = std::stoul(req.get_param_value("session_id"));
-        }
-        else {
-            std::cerr << "[ERROR] Missing session_id parameter in request." << std::endl;
-            res.status = 400;
-            res.set_header("Access-Control-Allow-Origin", "*");
-            return 400;
-        }
+    if (req.has_param("session_id")) {
+        session_id = std::stoul(req.get_param_value("session_id"));
+    }
+    else {
+        std::cerr << "[ERROR] Missing session_id parameter in request." << std::endl;
+        res.status = 400;
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_content("{\"error\": \"Missing session_id parameter\"}", "application/json");
+        return 400;
+    }
 
-        // Estrai il range
-        int matched = sscanf(range_header, "bytes=%zu-%zu", &start, &end);
+    // Gestione dell'header Range
+    bool range_specified = false;
+    if (!range_header.empty()) {
+        int matched = sscanf(range_header.c_str(), "bytes=%zu-%zu", &start, &end);
+        std::cout << "Range header: " << range_header << std::endl;
+        std::cout << "Matched: " << matched << std::endl;
+
         if (matched == 1) {
-            end = start + 1024 * 1024 - 1;
+            if (start == 0) {
+                end = start + 4096 * 4096 - 1;
+            }
+            else {
+                end = start + 4096 * 1024 - 1;
+            }
+            range_specified = true;
         }
-        else if (matched != 2) {
+
+        else if (matched == 2) {
+            // Caso "bytes=1000-2000"
+            range_specified = true;
+        }
+        else {
             std::cerr << "❌ Invalid Range header format" << std::endl;
             std::cerr << "📥 Range Header: " << range_header << std::endl;
-            res.status = 416;
+            res.status = 416; // Range Not Satisfiable
             res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_content("{\"error\": \"Invalid Range header format\"}", "application/json");
             return 416;
         }
+    }
+    else {
+        // Se il range non è specificato, manda il primo MB
+        start = 0;
+        end = start + 1024 * 1024 - 1;
+    }
 
-        std::shared_ptr<ClientSession> session = getSession(session_id);
+    std::cout << "Requested Range: " << start << " - " << end << std::endl;
 
-        session->send({
-            {"@type", "downloadFile"},
-            {"file_id", file_id},
-            {"priority", 1},
-            {"offset", start},
-            {"limit", end - start + 1},
-            {"synchronous", false}
-            });
+    std::shared_ptr<ClientSession> session = getSession(session_id);
 
-        static std::map<std::pair<unsigned int, uint32_t>, uint32_t> last_checked_map;
-        std::pair<unsigned int, uint32_t> key = std::make_pair(file_id, session_id);
+    // Richiedi a Telegram di scaricare la porzione richiesta
+    session->send({
+        {"@type", "downloadFile"},
+        {"file_id", file_id},
+        {"priority", 1},
+        {"offset", start},
+        {"limit", end - start + 1},
+        {"synchronous", false}
+        });
 
-        while (true) {
-            auto responses = session->getResponses()->get_all(last_checked_map[key]);
+    static std::map<std::pair<unsigned int, uint32_t>, uint32_t> last_checked_map;
+    std::pair<unsigned int, uint32_t> key = std::make_pair(file_id, session_id);
 
-            for (auto r = responses.begin(); r != responses.end(); ++r) {
-                last_checked_map[key] = r->first;
-                json response = r->second;
+    while (true) {
+        auto responses = session->getResponses()->get_all(last_checked_map[key]);
 
-                if (!response.is_null() && response["@type"] == "updateFile") {
-                    if (response["file"]["id"] == file_id &&
-                        response["file"]["local"]["is_downloading_active"] == false)
-                    {
-                        size_t available_start = response["file"]["local"]["download_offset"];
-                        size_t available_size = response["file"]["local"]["downloaded_size"];
-                        size_t available_end = available_start + available_size - 1;
+        for (auto r = responses.rbegin(); r != responses.rend(); ++r) {
+            json response = r->second;
 
-                        end = std::min({ end, (size_t)response["file"]["expected_size"] - 1, available_end });
+            if (!response.is_null() && response["@type"] == "updateFile") {
+                if (response["file"]["id"] == file_id) {
+                    bool downloading_active = response["file"]["local"]["is_downloading_active"];
+                    size_t available_start = response["file"]["local"]["download_offset"];
+                    size_t available_size = response["file"]["local"]["downloaded_size"];
+                    size_t available_end = available_start + available_size - 1;
+                    size_t file_size = response["file"]["expected_size"];
+                    std::string file_path = response["file"]["local"]["path"];
 
-                        std::string file_path = response["file"]["local"]["path"];
-                        int file_size = response["file"]["expected_size"];
+                    // Limita end alla dimensione reale del file
+                    if (end >= file_size) {
+                        end = file_size - 1;
+                    }
+
+                    std::cout << "FOUND " << available_start << " " << available_end << std::endl;
+
+                    // Verifica se la parte richiesta è già scaricata
+                    if (start == available_start && end <= available_end && !downloading_active) {
                         std::ifstream file(file_path, std::ios::binary);
-
-                        if (file) {
-                            size_t length = end - start + 1;
-                            file.seekg(start);
-                            std::vector<char> buffer(length);
-                            file.read(buffer.data(), length);
-                            file.close();
-
-                            res.status = 206;
-                            res.set_header("Access-Control-Allow-Origin", "*");
-                            res.set_header("Content-Type", "video/mp4");
-                            res.set_header("Accept-Ranges", "bytes");
-                            res.set_header("Content-Length", std::to_string(length));
-                            res.set_header("Content-Range", "bytes " + std::to_string(start) + "-" +
-                                std::to_string(end) + "/" + std::to_string(file_size));
-                            res.set_content(std::string(buffer.begin(), buffer.end()), "video/mp4");
-                            return 200;
-                        }
-                        else {
+                        if (!file) {
                             std::cerr << "[ERROR] Failed to open file: " << file_path << std::endl;
                             res.status = 500;
                             res.set_header("Access-Control-Allow-Origin", "*");
+                            res.set_content("{\"error\": \"Failed to open file\"}", "application/json");
                             return 500;
                         }
+
+                        size_t length = end - start + 1;
+                        file.seekg(start);
+                        std::vector<char> buffer(length);
+                        file.read(buffer.data(), length);
+                        size_t actually_read = file.gcount();
+                        file.close();
+
+                        if (actually_read != length) {
+                            std::cout << "[ERROR] Only read " << actually_read << " bytes instead of " << length << std::endl;
+                            res.status = 500;
+                            res.set_header("Access-Control-Allow-Origin", "*");
+                            res.set_content("{\"error\": \"Could not read full range\"}", "application/json");
+                            return 500;
+                        }
+
+                        std::cout << "Returning 206 Partial Content" << std::endl;
+
+                        res.status = 206;
+                        res.set_header("Access-Control-Allow-Origin", "*");
+                        res.set_header("Content-Type", "video/mp4");
+                        res.set_header("Accept-Ranges", "bytes");
+                        res.set_header("Connection", "keep-alive");
+                        res.set_header("Cache-Control", "no-cache");
+                        res.set_header("Content-Length", std::to_string(length));
+                        res.set_header("Content-Range", "bytes " + std::to_string(start) + "-" +
+                            std::to_string(end) + "/" + std::to_string(file_size));
+                        res.set_content(std::string(buffer.begin(), buffer.end()), "video/mp4");
+                        return 206;
                     }
                 }
             }
         }
-    }
-    else {
-        std::cerr << "[ERROR] Range header not found" << std::endl;
-        res.status = 405;
-        res.set_header("Access-Control-Allow-Origin", "*");
-        return 405;
-    }
 
-    return 200;
+        if (!responses.empty()) {
+            last_checked_map[key] = responses.rbegin()->first;
+        }
+    }
 }
+
 
 int handle_get_files(const httplib::Request& req, httplib::Response& res)
 {
@@ -757,4 +833,235 @@ int handle_image(const httplib::Request& req, httplib::Response& res)
         res.set_header("Access-Control-Allow-Origin", "*");
         return 404;
     }
+}
+
+int handle_get_user_info(const httplib::Request& req, httplib::Response& res) 
+{
+    std::cout << "received request" << std::endl;
+
+    std::string session_id_str = req.get_param_value("session_id");
+    std::string user_id_str = req.get_param_value("user_id");
+    std::string user_type = req.get_param_value("user_type"); // "user" o "chat"
+
+    std::cout << session_id_str << " " << user_id_str << " " << user_type << std::endl;
+
+    if (session_id_str.empty() || user_id_str.empty() || user_type.empty()) {
+        res.status = 400; // Bad Request
+        res.set_content("{\"error\":\"Missing parameters (session_id, user_id, or user_type)\"}", "application/json");
+        return 0;
+    }
+
+    int64_t session_id;
+    int64_t user_id;
+    try {
+        session_id = std::stoll(session_id_str);
+        user_id = std::stoll(user_id_str);
+    }
+    catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content("{\"error\":\"Invalid session_id or user_id format\"}", "application/json");
+        return 0;
+    }
+
+    std::shared_ptr<ClientSession> session = getSession(session_id);
+
+    if (user_type == "user") {
+        session->send({
+            {"@type", "getUser"},
+            {"user_id", user_id}
+            });
+    }
+    else if (user_type == "chat") {
+        session->send({
+            {"@type", "getChat"},
+            {"chat_id", user_id}
+            });
+    }
+    else {
+        res.status = 400;
+        res.set_content("{\"error\":\"Invalid user_type (must be 'user' or 'chat')\"}", "application/json");
+        return 0;
+    }
+
+    json response;
+    bool response_received = false;
+    uint32_t last_checked = 0;
+
+    while (!response_received) {
+        auto responses = session->getResponses()->get_all(last_checked);
+        for (const auto& [id, resp] : responses) {
+            last_checked = id;
+
+            if ((user_type == "user" && resp["@type"] == "user") ||
+                (user_type == "chat" && resp["@type"] == "chat")) {
+                if (resp["id"].get<int64_t>() == user_id) {
+                    response = resp;
+                    response_received = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!response_received) {
+        res.status = 504; // Gateway Timeout
+        res.set_content("{\"error\":\"TDLib response timeout\"}", "application/json");
+        return 0;
+    }
+
+    std::cout << response.dump(4) << std::endl;
+
+    json result;
+    auto process_media = [&](const json& media_data, const std::string& media_type) -> json {
+        if (!std::filesystem::exists("./public/media")) {
+            std::filesystem::create_directories("./public/media");
+        }
+
+        json media_info = {
+            {"local", media_data.value("local", json::object())},
+            {"remote", media_data.value("remote", json::object())}
+        };
+
+        // Se esiste già il file locale
+        if (media_info["local"].contains("path") && !media_info["local"]["path"].is_null()) {
+            std::string local_path = media_info["local"]["path"].get<std::string>();
+
+            // Genera un nome unico per il file
+            std::string file_ext = std::filesystem::path(local_path).extension().string();
+            std::string saved_filename = media_type + "_" +
+                std::to_string(time(nullptr)) +
+                file_ext;
+
+            // Salva nel database
+            std::string query = "INSERT INTO image (saved_filename) "
+                "VALUES ('" + saved_filename + "') ";
+
+            db_execute(query);
+            json db_result = db_select("SELECT id FROM image WHERE saved_filename = '" + saved_filename + "'")[0];
+            if (!db_result.is_null() && db_result.contains("id")) {
+                media_info["image_id"] = db_result["id"];
+                media_info["url"] = "/media/" + saved_filename;
+
+                // Copia il file nella cartella pubblica
+                std::filesystem::copy(local_path, "./public/media/" + saved_filename);
+            }
+        }
+        // Altrimenti scarica da remoto
+        else if (media_info["remote"].contains("id")) {
+            std::string file_id = media_info["remote"]["id"].get<std::string>();
+
+            // Invia richiesta di download
+            session->send({
+                {"@type", "downloadFile"},
+                {"file_id", file_id},
+                {"priority", 1},
+                {"synchronous", false}
+                });
+
+            // Attendi il download
+            bool downloaded = false;
+            uint32_t last_checked = 0;
+            while (!downloaded) {
+                auto responses = session->getResponses()->get_all(last_checked);
+                for (const auto& [id, resp] : responses) {
+                    last_checked = id;
+                    if (resp["@type"] == "file" && resp["id"] == file_id &&
+                        resp["local"]["is_downloading_completed"].get<bool>()) {
+
+                        std::string local_path = resp["local"]["path"].get<std::string>();
+                        std::string file_ext = std::filesystem::path(local_path).extension().string();
+                        std::string saved_filename = media_type + "_" +
+                            std::to_string(time(nullptr)) +
+                            file_ext;
+
+                        // Salva nel database
+                        std::string query = "INSERT INTO images (saved_filename) "
+                            "VALUES ('" + saved_filename + "') ";
+
+                        db_execute(query);
+                        json db_result = db_select("SELECT id FROM image WHERE saved_filename = '" + saved_filename + "'")[0];
+                        if (!db_result.is_null() && db_result.contains("id")) {
+                            media_info["image_id"] = db_result["id"];
+                            media_info["url"] = "/media/" + saved_filename;
+                            std::filesystem::copy(local_path, "./public/media/" + saved_filename);
+                        }
+
+                        downloaded = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return media_info;
+        };
+
+    if (user_type == "user") {
+        std::string username = "";
+        if (response.contains("usernames")) {
+            auto usernames = response["usernames"];
+            if (usernames.contains("active_usernames")) {
+                auto active_usernames = usernames["active_usernames"];
+                if (!active_usernames.empty()) {
+                    username = active_usernames[0].get<std::string>();
+                }
+            }
+        }
+
+        result = {
+            {"type", "user"},
+            {"id", response["id"]},
+            {"first_name", response.value("first_name", "")},
+            {"last_name", response.value("last_name", "")},
+            {"username", username},
+            {"phone_number", response.value("phone_number", "")}
+        };
+
+        if (!response["profile_photo"].is_null()) {
+            json photo_data = process_media(response["profile_photo"]["small"], "profile");
+            result["profile_photo"] = {
+                {"image_id", photo_data.value("image_id", -1)},
+                {"url", photo_data.value("url", "")},
+                {"original_data", {
+                    {"local", response["profile_photo"]["small"]["local"]},
+                    {"remote", response["profile_photo"]["small"]["remote"]}
+                }}
+            };
+        }
+    }
+    else if (user_type == "chat") {
+        std::string username = "";
+        if (response.contains("usernames")) {
+            auto& usernames = response["usernames"];
+            if (usernames.contains("active_usernames")) {
+                auto& active_usernames = usernames["active_usernames"];
+                if (active_usernames.is_array() && !active_usernames.empty()) {
+                    username = active_usernames[0].get<std::string>();
+                }
+            }
+        }
+
+        result = {
+            {"type", "chat"},
+            {"id", response["id"]},
+            {"title", response.value("title", "")},
+            {"username", username}
+        };
+
+        if (!response["photo"].is_null()) {
+            json photo_data = process_media(response["photo"]["small"], "chat_photo");
+            result["photo"] = {
+                {"image_id", photo_data.value("image_id", -1)},
+                {"url", photo_data.value("url", "")},
+                {"original_data", {
+                    {"local", response["photo"]["small"]["local"]},
+                    {"remote", response["photo"]["small"]["remote"]}
+                }}
+            };
+        }
+    }
+
+    res.set_content(result.dump(), "application/json");
+    res.status = 200;
+    return 200;
 }

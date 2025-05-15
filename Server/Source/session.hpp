@@ -44,7 +44,7 @@ public:
             }
         }
 
-        return std::move(items);
+        return items;
     }
 
     std::pair<uint32_t, T> pop() 

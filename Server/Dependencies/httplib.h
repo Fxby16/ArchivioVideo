@@ -5303,6 +5303,8 @@ inline bool range_error(Request &req, Response &res) {
     ssize_t content_len = static_cast<ssize_t>(
         res.content_length_ ? res.content_length_ : res.body.size());
 
+    //std::cout << "Content length " << content_len << std::endl;
+
     ssize_t prev_first_pos = -1;
     ssize_t prev_last_pos = -1;
     size_t overwrapping_count = 0;
@@ -5312,7 +5314,9 @@ inline bool range_error(Request &req, Response &res) {
     // https://www.rfc-editor.org/rfc/rfc9110#section-14.2
 
     // Too many ranges
-    if (req.ranges.size() > CPPHTTPLIB_RANGE_MAX_COUNT) { return true; }
+    if (req.ranges.size() > CPPHTTPLIB_RANGE_MAX_COUNT) { 
+        //std::cout << "Superato range count" << std::endl;
+        return true; }
 
     for (auto &r : req.ranges) {
       auto &first_pos = r.first;
@@ -5327,6 +5331,8 @@ inline bool range_error(Request &req, Response &res) {
         first_pos = content_len - last_pos;
         last_pos = content_len - 1;
       }
+
+      //std::cout << "Positions " << first_pos << " " << last_pos << std::endl;
 
       // NOTE: RFC-9110 '14.1.2. Byte Ranges':
       // A client can limit the number of bytes requested without knowing the
@@ -5344,16 +5350,21 @@ inline bool range_error(Request &req, Response &res) {
       // Range must be within content length
       if (!(0 <= first_pos && first_pos <= last_pos &&
             last_pos <= content_len - 1)) {
-        return true;
+          //std::cout << "Range non entro content length" << std::endl;
+        return false;
       }
 
       // Ranges must be in ascending order
-      if (first_pos <= prev_first_pos) { return true; }
+      if (first_pos <= prev_first_pos) { 
+          //std::cout << "Range non in ordine decrescente" << std::endl;
+          return true; }
 
       // Request must not have more than two overlapping ranges
       if (first_pos <= prev_last_pos) {
         overwrapping_count++;
-        if (overwrapping_count > 2) { return true; }
+        if (overwrapping_count > 2) { 
+            //std::cout << "Piu di 2 overlapping ranges" << std::endl;
+            return true; }
       }
 
       prev_first_pos = (std::max)(prev_first_pos, first_pos);
@@ -7194,7 +7205,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       res.set_header("Content-Range", content_range);
 
       assert(offset + length <= res.body.size());
-      res.body = res.body.substr(offset, length);
+      //res.body = res.body.substr(offset, length);
     } else {
       std::string data;
       detail::make_multipart_ranges_data(req, res, boundary, content_type,

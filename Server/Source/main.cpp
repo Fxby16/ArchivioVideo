@@ -26,9 +26,8 @@ int main()
     std::signal(SIGINT, signal_handler);
 
     connect_db();
-    setup_endpoints();
-
-    std::cout << "📺 Server running at http://localhost:10000\n";
+    std::thread https_thread(setup_endpoints_https);
+    std::thread http_thread(setup_endpoints_http);
 
     while(running){
         std::this_thread::sleep_for(std::chrono::seconds(5));

@@ -29,7 +29,7 @@ std::vector<json> get_chats(std::shared_ptr<ClientSession> session)
                 const auto& chat_ids = response["chat_ids"];
 
                 if(chat_ids.empty()){
-                    return std::move(chats); // niente più chat
+                    return chats; // niente più chat
                 }
 
                 for(const auto& chat_id : chat_ids){
@@ -76,7 +76,7 @@ std::vector<json> get_chats(std::shared_ptr<ClientSession> session)
         }
     }
 
-    return std::move(chats);
+    return chats;
 }
 
 std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session, const std::string &chat_id, int64_t from_message_id, int limit)
@@ -122,13 +122,29 @@ std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session
                                 message_text = message["content"]["caption"]["text"];
                             }
 
+                            std::string sender_id = "";
+                            std::string sender_type = "";
+                            if (message.contains("sender_id")) {
+                                // Il sender_id può essere di diversi tipi (user, chat, channel)
+                                if (message["sender_id"]["@type"] == "messageSenderUser") {
+                                    sender_id = std::to_string(message["sender_id"]["user_id"].get<int64_t>());
+                                    sender_type = "user";
+                                }
+                                else if (message["sender_id"]["@type"] == "messageSenderChat") {
+                                    sender_id = std::to_string(message["sender_id"]["chat_id"].get<int64_t>());
+                                    sender_type = "chat";
+                                }
+                            }
+
                             json video_info = {
                                 {"id", file_id},
                                 {"mime_type", message["content"]["video"]["mime_type"]},
                                 {"file_name", message["content"]["video"]["file_name"]},
                                 {"remote_id", message["content"]["video"]["video"]["remote"]["id"]},
                                 {"message_text", message_text},
-                                {"message_id", message["id"]}
+                                {"message_id", message["id"]},
+                                {"sender_id", sender_id},
+                                {"sender_type", sender_type}
                             };
 
                             videos.push_back(video_info);
@@ -139,7 +155,7 @@ std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session
 
                     // Se non ci sono più messaggi, esci dal loop
                     if(response["messages"].empty()){
-                        return std::move(videos);
+                        return videos;
                     }
 
                     // Aggiorna `from_message_id` per continuare a scorrere i messaggi
@@ -156,5 +172,5 @@ std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session
         }
     }
 
-    return std::move(videos);
+    return videos;
 }
