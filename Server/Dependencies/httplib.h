@@ -6655,7 +6655,7 @@ inline bool Server::write_response_with_content(Stream &strm,
                                                 bool close_connection,
                                                 const Request &req,
                                                 Response &res) {
-  return write_response_core(strm, close_connection, req, res, false);
+  return write_response_core(strm, close_connection, req, res, true);
 }
 
 inline bool Server::write_response_core(Stream &strm, bool close_connection,
@@ -7202,9 +7202,10 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       auto offset = offset_and_length.first;
       auto length = offset_and_length.second;
 
-      auto content_range = detail::make_content_range_header_field(
-          offset_and_length, res.body.size());
-      res.set_header("Content-Range", content_range);
+      if (res.headers.find("Content-Range") == res.headers.end()) {
+          auto content_range = detail::make_content_range_header_field(offset_and_length, res.body.size());
+          res.set_header("Content-Range", content_range);
+      }
 
       assert(offset + length <= res.body.size());
       //res.body = res.body.substr(offset, length);
