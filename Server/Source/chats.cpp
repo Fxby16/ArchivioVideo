@@ -100,17 +100,6 @@ std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session
             last_checked_map[session_id] = r->first; 
 
             if(!response.is_null() && (response["@type"] == "messages" || response["@type"] == "updateNewMessage" || response["@type"] == "message")){
-                // Controlla se il messaggio è un video
-                /*if(response["@type"] == "updateNewMessage"){
-                    if(response["message"]["content"]["@type"] == "messageVideo"){
-                        unsigned int file_id = response["message"]["content"]["video"]["video"]["id"];
-
-                        std::cout << "Video id: " << file_id << std::endl;
-
-                        videos.push_back(Video(file_id, response["message"]["content"]["video"]["video"]["mime_type"], response["message"]["content"]["video"]["video"]["file_name"]));
-                    }
-                }*/
-
                 if(response["@type"] == "messages"){
                     // Scorri i messaggi e cerca i video
                     for(const auto &message : response["messages"]){
@@ -136,6 +125,11 @@ std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session
                                 }
                             }
 
+                            std::string upload_date = "";
+                            if (message.contains("date")) {
+                                upload_date = format_unix_date(message["date"].get<int64_t>());
+                            }
+
                             json video_info = {
                                 {"id", file_id},
                                 {"mime_type", message["content"]["video"]["mime_type"]},
@@ -144,7 +138,8 @@ std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session
                                 {"message_text", message_text},
                                 {"message_id", message["id"]},
                                 {"sender_id", sender_id},
-                                {"sender_type", sender_type}
+                                {"sender_type", sender_type},
+                                {"date", upload_date}
                             };
 
                             videos.push_back(video_info);

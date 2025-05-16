@@ -87,3 +87,13 @@ std::string random_string(size_t length)
     }
     return result;
 }
+
+std::string format_unix_date(int64_t timestamp) 
+{
+    std::time_t time = static_cast<std::time_t>(timestamp);
+    std::tm tm = *std::localtime(&time);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%d");
+    return oss.str();
+}

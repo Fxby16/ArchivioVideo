@@ -249,6 +249,63 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                         return 206;
                     }
                 }
+            }else if (!response.is_null() && response["@type"] == "file") {
+                if (response["id"] == file_id) {
+                    bool downloading_active = response["local"]["is_downloading_active"];
+                    size_t available_start = response["local"]["download_offset"];
+                    size_t available_size = response["local"]["downloaded_size"];
+                    size_t available_end = available_start + available_size - 1;
+                    size_t file_size = response["expected_size"];
+                    std::string file_path = response["local"]["path"];
+
+                    // Limita end alla dimensione reale del file
+                    if (end >= file_size) {
+                        end = file_size - 1;
+                    }
+
+                    std::cout << "FOUND " << available_start << " " << available_end << std::endl;
+
+                    // Verifica se la parte richiesta è già scaricata
+                    if (start >= available_start && end <= available_end && !downloading_active) {
+                        std::ifstream file(file_path, std::ios::binary);
+                        if (!file) {
+                            std::cerr << "[ERROR] Failed to open file: " << file_path << std::endl;
+                            res.status = 500;
+                            res.set_header("Access-Control-Allow-Origin", "*");
+                            res.set_content("{\"error\": \"Failed to open file\"}", "application/json");
+                            return 500;
+                        }
+
+                        size_t length = end - start + 1;
+                        file.seekg(start - available_start);
+                        std::vector<char> buffer(length);
+                        file.read(buffer.data(), length);
+                        size_t actually_read = file.gcount();
+                        file.close();
+
+                        if (actually_read != length) {
+                            std::cout << "[ERROR] Only read " << actually_read << " bytes instead of " << length << std::endl;
+                            res.status = 500;
+                            res.set_header("Access-Control-Allow-Origin", "*");
+                            res.set_content("{\"error\": \"Could not read full range\"}", "application/json");
+                            return 500;
+                        }
+
+                        std::cout << "Returning 206 Partial Content" << std::endl;
+
+                        res.status = 206;
+                        res.set_header("Access-Control-Allow-Origin", "*");
+                        res.set_header("Content-Type", "video/mp4");
+                        res.set_header("Accept-Ranges", "bytes");
+                        res.set_header("Connection", "keep-alive");
+                        res.set_header("Cache-Control", "no-cache");
+                        res.set_header("Content-Length", std::to_string(length));
+                        res.set_header("Content-Range", "bytes " + std::to_string(start) + "-" +
+                            std::to_string(end) + "/" + std::to_string(file_size));
+                        res.set_content(std::string(buffer.begin(), buffer.end()), "video/mp4");
+                        return 206;
+                    }
+                }
             }
         }
 

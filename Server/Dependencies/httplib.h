@@ -6655,7 +6655,7 @@ inline bool Server::write_response_with_content(Stream &strm,
                                                 bool close_connection,
                                                 const Request &req,
                                                 Response &res) {
-  return write_response_core(strm, close_connection, req, res, true);
+  return write_response_core(strm, close_connection, req, res, false);
 }
 
 inline bool Server::write_response_core(Stream &strm, bool close_connection,
@@ -6670,7 +6670,9 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
   std::string content_type;
   std::string boundary;
-  if (need_apply_ranges) { apply_ranges(req, res, content_type, boundary); }
+  if (need_apply_ranges) { 
+      //std::cout << "Applying ranges" << std::endl;
+      apply_ranges(req, res, content_type, boundary); }
 
   // Prepare additional headers
   if (close_connection || req.get_header_value("Connection") == "close") {
