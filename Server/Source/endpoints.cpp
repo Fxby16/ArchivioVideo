@@ -88,6 +88,15 @@ int handle_chats(const httplib::Request& req, httplib::Response& res)
         return 400;
     }
 
+    /*getSession(session_id)->send({
+        {"@type", "optimizeStorage"},
+        {"size" , 0 },
+        {"ttl" , 0},
+        {"count" , 0},
+        {"immunity_delay" , 0}
+                }
+    );*/
+
     std::vector<json> chats = get_chats(getSession(session_id));
     std::string json_str = json(chats).dump();
 
@@ -100,10 +109,10 @@ int handle_chats(const httplib::Request& req, httplib::Response& res)
 
 int handle_video(const httplib::Request& req, httplib::Response& res)
 {
-    std::cout << "Received request for video" << std::endl;
-    for (const auto& header : req.headers) {
-        std::cout << header.first << ": " << header.second << std::endl;
-    }
+    //std::cout << "Received request for video" << std::endl;
+    //for (const auto& header : req.headers) {
+    //    std::cout << header.first << ": " << header.second << std::endl;
+    //}
 
     std::string range_header = req.get_header_value("Range");  // <-- conserva la stringa
     size_t start = 0, end = 0;
@@ -137,8 +146,8 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
     bool range_specified = false;
     if (!range_header.empty()) {
         int matched = sscanf(range_header.c_str(), "bytes=%zu-%zu", &start, &end);
-        std::cout << "Range header: " << range_header << std::endl;
-        std::cout << "Matched: " << matched << std::endl;
+        //std::cout << "Range header: " << range_header << std::endl;
+        //std::cout << "Matched: " << matched << std::endl;
 
         if (matched == 1) {
             if (start == 0) {
@@ -169,7 +178,7 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
         end = start + 1024 * 1024 - 1;
     }
 
-    std::cout << "Requested Range: " << start << " - " << end << std::endl;
+    //std::cout << "Requested Range: " << start << " - " << end << std::endl;
 
     std::shared_ptr<ClientSession> session = getSession(session_id);
 
@@ -193,11 +202,19 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
             json response = r->second;
 
             if (!response.is_null() && response["@type"] == "updateFile") {
+                //std::cout << response.dump(4) << std::endl;
                 if (response["file"]["id"] == file_id) {
                     bool downloading_active = response["file"]["local"]["is_downloading_active"];
                     size_t available_start = response["file"]["local"]["download_offset"];
-                    size_t available_size = response["file"]["local"]["downloaded_size"];
-                    size_t available_end = available_start + available_size - 1;
+                    size_t available_prefix = response["file"]["local"]["downloaded_prefix_size"];
+                    size_t available_end;
+                    if (available_prefix == 0) {
+                        available_end = available_start; // oppure 0
+                    }
+                    else {
+                        available_end = available_start + available_prefix - 1;
+                    }
+
                     size_t file_size = response["file"]["expected_size"];
                     std::string file_path = response["file"]["local"]["path"];
 
@@ -206,10 +223,10 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                         end = file_size - 1;
                     }
 
-                    std::cout << "FOUND " << available_start << " " << available_end << std::endl;
+                    //std::cout << "FOUND " << available_start << " " << available_end << std::endl;
 
                     // Verifica se la parte richiesta è già scaricata
-                    if (start == available_start && end <= available_end && !downloading_active) {
+                    if (start >= available_start && end <= available_end && !downloading_active) {
                         std::ifstream file(file_path, std::ios::binary);
                         if (!file) {
                             std::cerr << "[ERROR] Failed to open file: " << file_path << std::endl;
@@ -227,14 +244,15 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                         file.close();
 
                         if (actually_read != length) {
-                            std::cout << "[ERROR] Only read " << actually_read << " bytes instead of " << length << std::endl;
+                            std::cerr << "[ERROR] Only read " << actually_read << " bytes instead of " << length << std::endl;
                             res.status = 500;
                             res.set_header("Access-Control-Allow-Origin", "*");
                             res.set_content("{\"error\": \"Could not read full range\"}", "application/json");
                             return 500;
                         }
 
-                        std::cout << "Returning 206 Partial Content" << std::endl;
+                        //std::cout << "Returning 206 Partial Content " << (std::to_string(start) + "-" +
+                        //    std::to_string(end) + "/" + std::to_string(file_size)) << std::endl;
 
                         res.status = 206;
                         res.set_header("Access-Control-Allow-Origin", "*");
@@ -250,11 +268,18 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                     }
                 }
             }else if (!response.is_null() && response["@type"] == "file") {
+                //std::cout << response.dump(4) << std::endl;
                 if (response["id"] == file_id) {
                     bool downloading_active = response["local"]["is_downloading_active"];
                     size_t available_start = response["local"]["download_offset"];
-                    size_t available_size = response["local"]["downloaded_size"];
-                    size_t available_end = available_start + available_size - 1;
+                    size_t available_prefix = response["local"]["downloaded_prefix_size"];
+                    size_t available_end;
+                    if (available_prefix == 0) {
+                        available_end = available_start; // oppure 0
+                    }
+                    else {
+                        available_end = available_start + available_prefix - 1;
+                    }
                     size_t file_size = response["expected_size"];
                     std::string file_path = response["local"]["path"];
 
@@ -263,7 +288,7 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                         end = file_size - 1;
                     }
 
-                    std::cout << "FOUND " << available_start << " " << available_end << std::endl;
+                    //std::cout << "FOUND " << available_start << " " << available_end << std::endl;
 
                     // Verifica se la parte richiesta è già scaricata
                     if (start >= available_start && end <= available_end && !downloading_active) {
@@ -284,14 +309,15 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                         file.close();
 
                         if (actually_read != length) {
-                            std::cout << "[ERROR] Only read " << actually_read << " bytes instead of " << length << std::endl;
+                            std::cerr << "[ERROR] Only read " << actually_read << " bytes instead of " << length << std::endl;
                             res.status = 500;
                             res.set_header("Access-Control-Allow-Origin", "*");
                             res.set_content("{\"error\": \"Could not read full range\"}", "application/json");
                             return 500;
                         }
 
-                        std::cout << "Returning 206 Partial Content" << std::endl;
+                        //std::cout << "Returning 206 Partial Content " << (std::to_string(start) + "-" +
+                        //    std::to_string(end) + "/" + std::to_string(file_size)) << std::endl;
 
                         res.status = 206;
                         res.set_header("Access-Control-Allow-Origin", "*");
