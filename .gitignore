@@ -11,3 +11,4 @@ Server/Source/app_data.hpp
 *.vcxproj*
 tmp
 *.log
+*.pem
