@@ -216,7 +216,7 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                     }
 
                     size_t file_size = response["file"]["expected_size"];
-                    std::string file_path = response["file"]["local"]["path"];
+                    std::filesystem::path file_path = std::filesystem::u8path(response["file"]["local"]["path"].get<std::string>());
 
                     // Limita end alla dimensione reale del file
                     if (end >= file_size) {
@@ -281,7 +281,7 @@ int handle_video(const httplib::Request& req, httplib::Response& res)
                         available_end = available_start + available_prefix - 1;
                     }
                     size_t file_size = response["expected_size"];
-                    std::string file_path = response["local"]["path"];
+                    std::filesystem::path file_path = std::filesystem::u8path(response["local"]["path"].get<std::string>());
 
                     // Limita end alla dimensione reale del file
                     if (end >= file_size) {
@@ -578,9 +578,11 @@ int set_video_data_handler(const httplib::Request& req, httplib::Response& res)
     // campi testuali
     if (req.has_file("title")) {
         title = req.get_file_value("title").content;
+        title = escape_string(title);
     }
     if (req.has_file("description")) {
         description = req.get_file_value("description").content;
+        description = escape_string(description);
     }
     if (req.has_file("chat_id")) {
         chat_id = std::stoll(req.get_file_value("chat_id").content);
@@ -592,9 +594,11 @@ int set_video_data_handler(const httplib::Request& req, httplib::Response& res)
     //immagine
     std::string original_filename, image_data, extension;
     if (req.has_file("image")) {
+        std::cout << "Got file" << std::endl;
         const auto& file = req.get_file_value("image");
+        std::cout << file.filename << " size " << file.content.length() << std::endl;
         original_filename = file.filename;
-        extension = "." + file.content_type.substr(file.content_type.find('/') + 1);
+        extension = "." + file.filename.substr(file.filename.find('/') + 1);
         image_data = file.content;
     }
 
@@ -671,7 +675,7 @@ int get_videos_data_handler(const httplib::Request& req, httplib::Response& res)
         // Process each video in the "videos" array
         for (const auto& video : request_json["videos"]) {
             int64_t message_id = video["message_id"];
-
+             
             // Query the database for the video
             json res_db = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND message_id = " + std::to_string(message_id) + ";");
 
@@ -680,10 +684,10 @@ int get_videos_data_handler(const httplib::Request& req, httplib::Response& res)
                 out.push_back(video);
             }
             else {
-                unsigned int db_video_id = res_db[0]["id"];
+                unsigned int db_video_id = std::stoi(res_db[0]["id"].get<std::string>());
 
                 // Query the video data
-                res_db = db_select("SELECT * FROM video WHERE telegram_video_id = " + std::to_string(db_video_id) + ";");
+                res_db = db_select("SELECT * FROM video WHERE telegram_video_id = " + std::to_string(db_video_id) + " ORDER BY id DESC;");
                 if (res_db.empty()) {
                     out.push_back(video);
                 }
