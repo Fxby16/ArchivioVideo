@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="90dp"
+    android:viewportWidth="160"
+    android:viewportHeight="90">
+    <path
+    android:fillColor="#CCCCCC"
+    android:pathData="M0,0h160v90H0z"/>
+    <path
+    android:fillColor="#FFFFFF"
+    android:pathData="M65,30l24,15l-24,15z"/> <!-- Centra il triangolo -->
+    </vector>
