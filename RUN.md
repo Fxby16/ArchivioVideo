@@ -19,15 +19,17 @@
 3. Replace the server's IP address in `res/values/strings.xml` with your server's IP address.
 
 ## Run the server
-1. Open a terminal and navigate to the `Server` directory.
-2. Run the server
+1. Start MYSQL
+2. Import the [database](Server/Database.sql)
+3. Open a terminal and navigate to the `Server` directory.
+4. Run the server
     - Windows
         Run the server from Visual Studio or run the binary located in `Server/bin/Debug/` or `Server/bin/Release/`.
     - Linux
         ```bash
         bin/{Debug,Release}/ArchivioVideoServer
         ```
-3. The server will listen on port 10000 for HTTPS and 10001 for HTTP.
+5. The server will listen on port 10000 for HTTPS and 10001 for HTTP.
 
 ## Run the client
 Just run the app on your Android device. Make sure the device is connected to the same network as the server. The app will automatically detect the server's IP address and connect to it.
